@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexPing - P2P Messenger</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📡</text></svg>">
+</head>
+<body>
+ 
+    <div id="auth-screen" class="screen active">
+        <div class="container">
+            <h1>NexPing</h1>
+            <div id="auth-tabs">
+                <button class="tab-btn active" data-tab="login">Вход</button>
+                <button class="tab-btn" data-tab="register">Регистрация</button>
+            </div>
+            
+            <form id="login-form">
+                <input type="text" id="login-username" placeholder="Имя пользователя" required>
+                <input type="password" id="login-password" placeholder="Пароль" required>
+                <button type="submit">Войти</button>
+            </form>
+            
+            <form id="register-form" style="display:none">
+                <input type="text" id="register-username" placeholder="Имя пользователя" required>
+                <input type="password" id="register-password" placeholder="Пароль" required>
+                <button type="submit">Зарегистрироваться</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="main-screen" class="screen">
+        <header>
+            <button id="profile-btn"><i class="fas fa-user"></i></button>
+            <h1>NexPing</h1>
+            <button id="add-contact-btn"><i class="fas fa-user-plus"></i></button>
+        </header>
+
+        <div class="content">
+         
+            <div id="contacts-section">
+                <div class="search-box">
+                    <input type="text" id="contact-search" placeholder="Поиск контактов...">
+                    <i class="fas fa-search"></i>
+                </div>
+                <div id="contacts-list"></div>
+            </div>
+
+            <div id="chat-section" style="display:none">
+                <div class="chat-header">
+                    <button id="back-to-contacts"><i class="fas fa-arrow-left"></i></button>
+                    <div class="contact-info">
+                        <img id="current-contact-avatar" src="" alt="avatar">
+                        <h2 id="current-contact-name"></h2>
+                    </div>
+                    <button id="call-btn"><i class="fas fa-phone"></i></button>
+                </div>
+                <div id="messages-container"></div>
+                <div class="message-input">
+                    <input type="text" id="message-input" placeholder="Написать сообщение...">
+                    <button id="send-btn"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="profile-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Ваш профиль</h2>
+            <div class="avatar-upload">
+                <img id="user-avatar" src="" alt="Ваш аватар">
+                <input type="file" id="avatar-upload" accept="image/*">
+            </div>
+            <input type="text" id="user-name" placeholder="Ваше имя">
+            <div class="uuid-section">
+                <label>Ваш ID:</label>
+                <div class="uuid-container">
+                    <span id="user-uuid"></span>
+                    <button id="copy-uuid"><i class="fas fa-copy"></i></button>
+                </div>
+            </div>
+            <button id="save-profile">Сохранить</button>
+        </div>
+    </div>
+
+    <div id="add-contact-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Добавить контакт</h2>
+            <input type="text" id="contact-uuid" placeholder="Введите UUID контакта">
+            <button id="add-contact">Добавить</button>
+        </div>
+    </div>
+
+    <div id="call-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="call-status">Звонок...</h2>
+            <div class="video-container">
+                <video id="remote-video" autoplay muted></video>
+                <video id="local-video" autoplay muted></video>
+            </div>
+            <div class="call-controls">
+                <button id="end-call"><i class="fas fa-phone-slash"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="p2p.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
