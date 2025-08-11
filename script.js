@@ -1,5 +1,8 @@
-document.addEventListener('DOMContentLoaded', () => {
+let isPeerConnected = false;
+let connectionStatus = 'disconnected';
 
+document.addEventListener('DOMContentLoaded', () => {
+    // Все элементы DOM
     const authScreen = document.getElementById('auth-screen');
     const mainScreen = document.getElementById('main-screen');
     const loginForm = document.getElementById('login-form');
@@ -18,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const addContactBtn = document.getElementById('add-contact-btn');
     const callBtn = document.getElementById('call-btn');
 
+    // Модальные окна
     const profileModal = document.getElementById('profile-modal');
     const addContactModal = document.getElementById('add-contact-modal');
     const callModal = document.getElementById('call-modal');
@@ -38,16 +42,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function init() {
         setupEventListeners();
         checkAuth();
+        setupConnectionMonitor();
     }
     
     function setupEventListeners() {
-    
         loginTab.addEventListener('click', () => switchAuthTab('login'));
         registerTab.addEventListener('click', () => switchAuthTab('register'));
         
         loginForm.addEventListener('submit', handleLogin);
         registerForm.addEventListener('submit', handleRegister);
-     
+        
         sendBtn.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
@@ -57,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
         profileBtn.addEventListener('click', () => showModal(profileModal));
         addContactBtn.addEventListener('click', () => showModal(addContactModal));
         callBtn.addEventListener('click', startCall);
-       
+        
         document.querySelectorAll('.close').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.modal').forEach(modal => {
@@ -75,6 +79,37 @@ document.addEventListener('DOMContentLoaded', () => {
         endCallBtn.addEventListener('click', endCall);
         
         contactSearch.addEventListener('input', searchContacts);
+    }
+
+    function setupConnectionMonitor() {
+        setInterval(() => {
+            updateConnectionStatus();
+        }, 2000);
+    }
+
+    function updateConnectionStatus() {
+        let statusText = '';
+        let statusClass = '';
+        
+        switch(connectionStatus) {
+            case 'connected':
+                statusText = 'Online';
+                statusClass = 'success';
+                break;
+            case 'connecting':
+                statusText = 'Connecting...';
+                statusClass = 'warning';
+                break;
+            case 'error':
+                statusText = 'Connection error';
+                statusClass = 'error';
+                break;
+            default:
+                statusText = 'Offline';
+                statusClass = 'error';
+        }
+        
+        showConnectionStatus(statusText, statusClass);
     }
 
     function checkAuth() {
@@ -139,16 +174,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function updateProfileUI() {
+        userAvatar.src = generateAvatar(currentUser.uuid);
+        userNameInput.value = currentUser.name || '';
+        userUuidSpan.textContent = currentUser.uuid;
+    }
 
-    userAvatar.src = generateAvatar(currentUser.uuid);
-    userNameInput.value = currentUser.name || '';
-    userUuidSpan.textContent = currentUser.uuid;
-}
-
-function generateAvatar(uuid, size = 100) {
-
-    return `https://api.dicebear.com/7.x/identicon/svg?seed=${uuid}&size=${size}`;
-}
+    function generateAvatar(uuid, size = 100) {
+        return `https://api.dicebear.com/7.x/identicon/svg?seed=${uuid}&size=${size}`;
+    }
     
     function loadContacts() {
         const contacts = getContacts();
@@ -161,6 +194,7 @@ function generateAvatar(uuid, size = 100) {
                 <img src="${contact.avatar || generateAvatar(contact.uuid, 40)}" alt="${contact.name}">
                 <div class="contact-info">
                     <div class="contact-name">${escapeHTML(contact.name)}</div>
+                    <div class="contact-status ${contact.online ? 'online' : 'offline'}"></div>
                 </div>
             `;
             contactEl.addEventListener('click', () => openChat(contact));
@@ -183,6 +217,7 @@ function generateAvatar(uuid, size = 100) {
                     <img src="${contact.avatar || generateAvatar(contact.uuid, 40)}" alt="${contact.name}">
                     <div class="contact-info">
                         <div class="contact-name">${escapeHTML(contact.name)}</div>
+                        <div class="contact-status ${contact.online ? 'online' : 'offline'}"></div>
                     </div>
                 `;
                 contactEl.addEventListener('click', () => openChat(contact));
@@ -239,7 +274,13 @@ function generateAvatar(uuid, size = 100) {
         saveMessage(message);
         addMessageToUI(message, true);
         
-        sendP2PMessage(currentContact.uuid, message);
+        sendP2PMessage(currentContact.uuid, message)
+            .catch(error => {
+                console.error('Ошибка отправки сообщения:', error);
+                // Сохраняем сообщение как неотправленное
+                message.status = 'failed';
+                saveMessage(message);
+            });
         
         messageInput.value = '';
     }
@@ -249,6 +290,19 @@ function generateAvatar(uuid, size = 100) {
             addMessageToUI(message, false);
         }
         saveMessage(message);
+        
+        // Обновляем статус контакта как онлайн
+        updateContactStatus(message.sender, true);
+    }
+    
+    function updateContactStatus(uuid, isOnline) {
+        const contacts = getContacts();
+        const contact = contacts.find(c => c.uuid === uuid);
+        if (contact) {
+            contact.online = isOnline;
+            localStorage.setItem(`${currentUser.uuid}_contacts`, JSON.stringify(contacts));
+            loadContacts();
+        }
     }
     
     function handleAvatarUpload(e) {
@@ -285,10 +339,11 @@ function generateAvatar(uuid, size = 100) {
         }
         
         const contact = {
-    uuid,
-    name: `Контакт ${uuid.substring(0, 8)}`,
-    avatar: generateAvatar(uuid, 40)
-};
+            uuid,
+            name: `Контакт ${uuid.substring(0, 8)}`,
+            avatar: generateAvatar(uuid, 40),
+            online: false
+        };
         
         addContact(contact);
         addContactModal.classList.remove('active');
@@ -298,6 +353,12 @@ function generateAvatar(uuid, size = 100) {
     
     function startCall() {
         if (!currentContact) return;
+        
+        if (connectionStatus !== 'connected') {
+            alert('Нет подключения к P2P сети. Пожалуйста, подождите...');
+            return;
+        }
+        
         showModal(callModal);
         startP2PCall(currentContact.uuid);
     }
@@ -311,6 +372,18 @@ function generateAvatar(uuid, size = 100) {
         modal.classList.add('active');
     }
     
+    function showConnectionStatus(message, type = 'info') {
+        let statusEl = document.getElementById('connection-status');
+        if (!statusEl) {
+            statusEl = document.createElement('div');
+            statusEl.id = 'connection-status';
+            document.body.appendChild(statusEl);
+        }
+        
+        statusEl.textContent = message;
+        statusEl.className = `connection-status connection-${type}`;
+    }
+    
     function escapeHTML(str) {
         return str.replace(/[&<>"']/g, 
             tag => ({
@@ -322,6 +395,7 @@ function generateAvatar(uuid, size = 100) {
             }[tag] || tag));
     }
     
+    // LocalStorage API
     function getCurrentUser() {
         return JSON.parse(localStorage.getItem('currentUser'));
     }
@@ -342,12 +416,13 @@ function generateAvatar(uuid, size = 100) {
         if (users.some(u => u.username === username)) return false;
         
         const user = {
-    uuid: generateUUID(),
-    username,
-    password,
-    name: username,
-    avatar: generateAvatar(generateUUID())
-};
+            uuid: generateUUID(),
+            username,
+            password,
+            name: username,
+            avatar: generateAvatar(generateUUID()),
+            online: false
+        };
         
         users.push(user);
         localStorage.setItem('users', JSON.stringify(users));
@@ -396,4 +471,10 @@ function generateAvatar(uuid, size = 100) {
             return v.toString(16);
         });
     }
+
+    window.handleIncomingMessage = handleIncomingMessage;
+    window.updateConnectionStatus = (status) => {
+        connectionStatus = status;
+        updateConnectionStatus();
+    };
 });
