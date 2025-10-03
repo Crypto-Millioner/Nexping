@@ -1,163 +1,79 @@
-// WebRTC менеджер для установки P2P соединений
-
+// webrtc.js
 class WebRTCManager {
     constructor() {
         this.peerConnections = {};
         this.dataChannels = {};
-        this.configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
+        this.stunServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+        ];
+        
+        this.init();
     }
     
     init() {
+        // В реальном приложении здесь была бы логика установки P2P соединений
+        // через сигнальный сервер, но так как мы работаем без бэкенда,
+        // эта часть является упрощенной демонстрацией
+        
         console.log('WebRTC Manager инициализирован');
     }
     
-    // Инициирование соединения с контактом
-    initiateConnection(contactId) {
-        console.log(`Инициирование соединения с ${contactId}`);
+    initiateConnection(contactUuid) {
+        // В реальном приложении здесь создавалось бы P2P соединение
+        console.log(`Инициирование соединения с ${contactUuid}`);
         
-        // Создание PeerConnection
-        const peerConnection = new RTCPeerConnection(this.configuration);
-        this.peerConnections[contactId] = peerConnection;
-        
-        // Создание канала данных
-        const dataChannel = peerConnection.createDataChannel('messaging', {
-            ordered: true
-        });
-        
-        this.setupDataChannel(dataChannel, contactId);
-        
-        // Обработчики событий ICE кандидатов
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                // В реальном приложении здесь бы отправлялся кандидат сигнальному серверу
-                console.log('Новый ICE кандидат:', event.candidate);
-            }
-        };
-        
-        // Создание офера
-        peerConnection.createOffer()
-            .then(offer => {
-                return peerConnection.setLocalDescription(offer);
-            })
-            .then(() => {
-                console.log('Офер создан');
-                // В реальном приложении здесь бы офер отправлялся контакту через сигнальный сервер
-            })
-            .catch(error => {
-                console.error('Ошибка создания офера:', error);
-            });
-        
-        // Обработка входящих сообщений
-        peerConnection.ondatachannel = (event) => {
-            const dataChannel = event.channel;
-            this.setupDataChannel(dataChannel, contactId);
-        };
+        // Для демонстрации имитируем успешное соединение через 2 секунды
+        setTimeout(() => {
+            this.simulateConnection(contactUuid);
+        }, 2000);
     }
     
-    // Настройка канала данных
-    setupDataChannel(dataChannel, contactId) {
-        this.dataChannels[contactId] = dataChannel;
-        
-        dataChannel.onopen = () => {
-            console.log(`Канал данных с ${contactId} открыт`);
-            // Можно обновить статус соединения в UI
-        };
-        
-        dataChannel.onclose = () => {
-            console.log(`Канал данных с ${contactId} закрыт`);
-            // Можно обновить статус соединения в UI
-        };
-        
-        dataChannel.onmessage = (event) => {
-            console.log(`Получено сообщение от ${contactId}:`, event.data);
-            
-            try {
-                const message = JSON.parse(event.data);
-                if (message.type === 'text') {
-                    // Передаем сообщение в основное приложение
-                    if (typeof app !== 'undefined') {
-                        app.receiveMessage(contactId, message.content);
+    simulateConnection(contactUuid) {
+        // Имитация успешного соединения для демонстрации
+        this.dataChannels[contactUuid] = {
+            send: (message) => {
+                console.log(`Сообщение отправлено ${contactUuid}: ${message}`);
+                // В реальном приложении сообщение отправлялось бы через data channel
+                
+                // Имитация получения ответа через случайное время
+                setTimeout(() => {
+                    if (window.nexpingApp) {
+                        window.nexpingApp.receiveMessage(contactUuid, `Ответ на: ${message}`);
                     }
-                }
-            } catch (error) {
-                console.error('Ошибка обработки сообщения:', error);
+                }, 1000 + Math.random() * 2000);
             }
         };
+        
+        this.peerConnections[contactUuid] = { connected: true };
+        
+        // Обновляем статус соединения в UI
+        if (window.nexpingApp && window.nexpingApp.activeContact === contactUuid) {
+            window.nexpingApp.updateConnectionStatus();
+        }
+        
+        console.log(`Соединение с ${contactUuid} установлено`);
     }
     
-    // Отправка сообщения
-    sendMessage(contactId, text) {
-        const dataChannel = this.dataChannels[contactId];
-        
-        if (dataChannel && dataChannel.readyState === 'open') {
-            const message = {
-                type: 'text',
-                content: text,
-                timestamp: Date.now()
-            };
-            
-            dataChannel.send(JSON.stringify(message));
-            console.log(`Сообщение отправлено ${contactId}:`, text);
+    sendMessage(contactUuid, message) {
+        if (this.dataChannels[contactUuid]) {
+            this.dataChannels[contactUuid].send(message);
+            return true;
         } else {
-            console.warn(`Канал данных с ${contactId} не доступен`);
-            // Сообщение будет сохранено локально, но не отправлено
+            console.log(`Нет соединения с ${contactUuid}`);
+            return false;
         }
     }
     
-    // Обработка входящего офера (в реальном приложении)
-    handleOffer(contactId, offer) {
-        console.log(`Обработка офера от ${contactId}`);
-        
-        const peerConnection = new RTCPeerConnection(this.configuration);
-        this.peerConnections[contactId] = peerConnection;
-        
-        // Обработчики событий ICE кандидатов
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                // В реальном приложении здесь бы отправлялся кандидат сигнальному серверу
-                console.log('Новый ICE кандидат:', event.candidate);
-            }
-        };
-        
-        // Установка удаленного описания
-        peerConnection.setRemoteDescription(offer)
-            .then(() => {
-                return peerConnection.createAnswer();
-            })
-            .then(answer => {
-                return peerConnection.setLocalDescription(answer);
-            })
-            .then(() => {
-                console.log('Ответ создан');
-                // В реальном приложении здесь бы ответ отправлялся контакту через сигнальный сервер
-            })
-            .catch(error => {
-                console.error('Ошибка обработки офера:', error);
-            });
-        
-        // Обработка входящих каналов данных
-        peerConnection.ondatachannel = (event) => {
-            const dataChannel = event.channel;
-            this.setupDataChannel(dataChannel, contactId);
-        };
-    }
-    
-    // Обработка ICE кандидата (в реальном приложении)
-    handleICECandidate(contactId, candidate) {
-        const peerConnection = this.peerConnections[contactId];
-        if (peerConnection) {
-            peerConnection.addIceCandidate(candidate)
-                .catch(error => {
-                    console.error('Ошибка добавления ICE кандидата:', error);
-                });
-        }
+    isConnected(contactUuid) {
+        return this.peerConnections[contactUuid] && this.peerConnections[contactUuid].connected;
     }
 }
 
-// Создание экземпляра WebRTC менеджера
-const webRTCManager = new WebRTCManager();
+// Инициализация WebRTC менеджера
+document.addEventListener('DOMContentLoaded', () => {
+    window.webrtcManager = new WebRTCManager();
+});
