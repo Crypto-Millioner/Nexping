@@ -389,6 +389,39 @@
             margin-bottom: 15px;
             opacity: 0.5;
         }
+
+        /* Добавить в style.css */
+.status-indicator.connecting {
+    background-color: orange !important;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.contact-item .connection-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    display: inline-block;
+}
+
+.contact-item .connection-indicator.connected {
+    background-color: var(--success-color);
+}
+
+.contact-item .connection-indicator.connecting {
+    background-color: orange;
+    animation: pulse 1.5s infinite;
+}
+
+.contact-item .connection-indicator.disconnected {
+    background-color: #ccc;
+}
     </style>
 </head>
 <body>

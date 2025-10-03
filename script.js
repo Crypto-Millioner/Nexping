@@ -93,8 +93,10 @@ class NexPingApp {
             }
         });
         
-        // Очистка старых сообщений каждые 6 дней
-        this.setupAutoCleanup();
+        // Периодическая проверка соединений
+        setInterval(() => {
+            this.checkConnections();
+        }, 5000);
     }
     
     openAddContactModal() {
@@ -167,10 +169,30 @@ class NexPingApp {
             contactElement.className = `contact-item ${this.activeContact === contact.uuid ? 'active' : ''}`;
             contactElement.dataset.uuid = contact.uuid;
             
+            // Получаем статус соединения
+            let connectionStatus = 'disconnected';
+            let statusText = 'Не подключено';
+            
+            if (window.webrtcManager) {
+                const isConnected = window.webrtcManager.isConnected(contact.uuid);
+                const connectionState = window.webrtcManager.getConnectionStatus(contact.uuid);
+                
+                if (isConnected) {
+                    connectionStatus = 'connected';
+                    statusText = 'В сети';
+                } else if (connectionState === 'connecting') {
+                    connectionStatus = 'connecting';
+                    statusText = 'Подключение...';
+                }
+            }
+            
             contactElement.innerHTML = `
-                <div>
+                <div class="contact-info">
                     <div class="contact-name">${contact.name}</div>
-                    <div class="contact-status">${contact.uuid}</div>
+                    <div class="contact-status">
+                        <span class="connection-indicator ${connectionStatus}"></span>
+                        ${statusText}
+                    </div>
                 </div>
                 <div class="contact-actions">
                     <i class="fas fa-trash delete-contact" title="Удалить контакт"></i>
@@ -199,21 +221,33 @@ class NexPingApp {
         this.renderContacts();
         this.renderChat();
         
-        // Обновляем заголовок чата
         const contact = this.contacts.find(c => c.uuid === uuid);
         document.getElementById('chatTitle').textContent = contact.name;
         
-        // Активируем поле ввода сообщения
         document.getElementById('messageInput').disabled = false;
         document.getElementById('sendMessageBtn').disabled = false;
         
-        // Обновляем статус соединения
         this.updateConnectionStatus();
+        
+        // Автоматически инициируем соединение при выборе контакта
+        if (window.webrtcManager && !window.webrtcManager.isConnected(uuid)) {
+            window.webrtcManager.initiateConnection(uuid);
+        }
     }
     
     deleteContact(uuid) {
         if (confirm('Вы уверены, что хотите удалить этот контакт?')) {
             this.contacts = this.contacts.filter(contact => contact.uuid !== uuid);
+            
+            // Закрываем WebRTC соединение
+            if (window.webrtcManager) {
+                const pc = window.webrtcManager.peerConnections[uuid];
+                if (pc) {
+                    pc.close();
+                    delete window.webrtcManager.peerConnections[uuid];
+                }
+                delete window.webrtcManager.dataChannels[uuid];
+            }
             
             // Если удаляем активный контакт, сбрасываем активный контакт
             if (this.activeContact === uuid) {
@@ -258,7 +292,12 @@ class NexPingApp {
         
         chatArea.innerHTML = '';
         
-        contactMessages.forEach(message => {
+        // Сортируем сообщения по времени
+        const sortedMessages = contactMessages.sort((a, b) => 
+            new Date(a.timestamp) - new Date(b.timestamp)
+        );
+        
+        sortedMessages.forEach(message => {
             const messageElement = document.createElement('div');
             messageElement.className = `message ${message.sender === this.userUuid ? 'sent' : 'received'}`;
             
@@ -309,7 +348,14 @@ class NexPingApp {
         
         // Отправляем сообщение через WebRTC
         if (window.webrtcManager) {
-            window.webrtcManager.sendMessage(this.activeContact, text);
+            const sent = window.webrtcManager.sendMessage(this.activeContact, text);
+            
+            if (!sent) {
+                this.showNotification('Сообщение не отправлено. Соединение не установлено.', 'error');
+                
+                // Пытаемся переподключиться
+                window.webrtcManager.initiateConnection(this.activeContact);
+            }
         }
     }
     
@@ -337,8 +383,11 @@ class NexPingApp {
             // Показываем уведомление о новом сообщении
             const contact = this.contacts.find(c => c.uuid === senderUuid);
             if (contact) {
-                this.showNotification(`Новое сообщение от ${contact.name}`, 'success');
+                this.showNotification(`Новое сообщение от ${contact.name}: ${text}`, 'success');
             }
+            
+            // Обновляем список контактов чтобы показать новый статус
+            this.renderContacts();
         }
     }
     
@@ -349,13 +398,34 @@ class NexPingApp {
         
         if (window.webrtcManager && this.activeContact) {
             const isConnected = window.webrtcManager.isConnected(this.activeContact);
+            const connectionState = window.webrtcManager.getConnectionStatus(this.activeContact);
             
             if (isConnected) {
                 indicator.className = 'status-indicator connected';
                 statusText.textContent = 'Подключено';
             } else {
-                indicator.className = 'status-indicator';
-                statusText.textContent = 'Не подключено';
+                switch(connectionState) {
+                    case 'connecting':
+                        indicator.className = 'status-indicator connecting';
+                        statusText.textContent = 'Подключение...';
+                        break;
+                    case 'connected':
+                        indicator.className = 'status-indicator connected';
+                        statusText.textContent = 'Подключено';
+                        break;
+                    case 'disconnected':
+                        indicator.className = 'status-indicator';
+                        statusText.textContent = 'Отключено';
+                        break;
+                    case 'failed':
+                        indicator.className = 'status-indicator';
+                        statusText.textContent = 'Ошибка подключения';
+                        indicator.style.backgroundColor = 'red';
+                        break;
+                    default:
+                        indicator.className = 'status-indicator';
+                        statusText.textContent = 'Не подключено';
+                }
             }
         } else {
             indicator.className = 'status-indicator';
@@ -363,9 +433,49 @@ class NexPingApp {
         }
     }
     
+    checkConnections() {
+        // Периодически проверяем соединения с контактами
+        this.contacts.forEach(contact => {
+            if (window.webrtcManager) {
+                const isConnected = window.webrtcManager.isConnected(contact.uuid);
+                const connectionState = window.webrtcManager.getConnectionStatus(contact.uuid);
+                
+                // Если соединение разорвано, пытаемся переподключиться
+                if (!isConnected && 
+                    connectionState !== 'connecting' && 
+                    connectionState !== 'connected') {
+                    
+                    console.log(`Попытка переподключения к ${contact.uuid}`);
+                    window.webrtcManager.initiateConnection(contact.uuid);
+                }
+            }
+        });
+        
+        // Обновляем статус если активный контакт есть
+        if (this.activeContact) {
+            this.updateConnectionStatus();
+        }
+        
+        // Обновляем индикаторы статуса в списке контактов
+        this.renderContacts();
+    }
+    
     copyToClipboard(text) {
         navigator.clipboard.writeText(text).catch(err => {
             console.error('Ошибка копирования в буфер обмена: ', err);
+            
+            // Fallback для старых браузеров
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                this.showNotification('UUID скопирован в буфер обмена', 'success');
+            } catch (fallbackErr) {
+                this.showNotification('Не удалось скопировать UUID', 'error');
+            }
+            document.body.removeChild(textArea);
         });
     }
     
@@ -385,10 +495,15 @@ class NexPingApp {
         const sixDaysAgo = new Date();
         sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
         
+        let cleanedCount = 0;
+        
         for (const contactUuid in this.messages) {
+            const originalLength = this.messages[contactUuid].length;
             this.messages[contactUuid] = this.messages[contactUuid].filter(message => {
                 return new Date(message.timestamp) > sixDaysAgo;
             });
+            
+            cleanedCount += (originalLength - this.messages[contactUuid].length);
             
             // Если массив сообщений пуст, удаляем его
             if (this.messages[contactUuid].length === 0) {
@@ -397,6 +512,10 @@ class NexPingApp {
         }
         
         this.saveMessages();
+        
+        if (cleanedCount > 0) {
+            console.log(`Автоочистка: удалено ${cleanedCount} сообщений старше 6 дней`);
+        }
         
         // Запускаем очистку каждые 24 часа
         setInterval(() => {
@@ -408,4 +527,10 @@ class NexPingApp {
 // Инициализация приложения
 document.addEventListener('DOMContentLoaded', () => {
     window.nexpingApp = new NexPingApp();
+});
+
+window.addEventListener('beforeunload', () => {
+    if (window.webrtcManager) {
+        window.webrtcManager.closeAllConnections();
+    }
 });
